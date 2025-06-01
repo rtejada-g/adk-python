@@ -30,21 +30,45 @@ class FunctionTool(BaseTool):
 
   Attributes:
     func: The function to wrap.
+    displayName: Optional user-friendly display name for the tool.
   """
 
-  def __init__(self, func: Callable[..., Any]):
-    """Extract metadata from a callable object."""
+  def __init__(self, 
+               func: Callable[..., Any], 
+               name: Optional[str] = None,
+               description: Optional[str] = None,
+               displayName: Optional[str] = None
+               ):
+    """Initializes the FunctionTool.
+
+    Args:
+      func: The callable to be wrapped as a tool.
+      name: Optional. The internal name of the tool. If None, it's inferred
+        from the function.
+      description: Optional. A description of what the tool does. If None,
+        it's inferred from the function's docstring.
+      displayName: Optional. A user-friendly name for display purposes. If
+        None, the internal name might be used as a fallback by consumers.
+    """
+    inferred_name: str
+    inferred_description: str
+
     if inspect.isfunction(func) or inspect.ismethod(func):
       # Handle regular functions and methods
-      name = func.__name__
-      doc = func.__doc__ or ''
+      inferred_name = func.__name__
+      inferred_description = func.__doc__ or ''
     else:
       # Handle objects with __call__ method
-      call_method = func.__call__
-      name = func.__class__.__name__
-      doc = call_method.__doc__ or func.__doc__ or ''
-    super().__init__(name=name, description=doc)
+      call_method = func.__call__ # type: ignore
+      inferred_name = func.__class__.__name__
+      inferred_description = call_method.__doc__ or func.__doc__ or ''
+    
+    tool_name = name if name is not None else inferred_name
+    tool_description = description if description is not None else inferred_description
+            
+    super().__init__(name=tool_name, description=tool_description)
     self.func = func
+    self.displayName = displayName
 
   @override
   def _get_declaration(self) -> Optional[types.FunctionDeclaration]:
