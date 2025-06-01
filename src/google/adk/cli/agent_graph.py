@@ -36,9 +36,14 @@ else:
 
 
 async def build_graph(graph, agent: BaseAgent, highlight_pairs):
-  dark_green = '#0F5223'
-  light_green = '#69CB87'
-  light_gray = '#cccccc'
+  # Gradient with more contrast: Very Dark Blue/Slate to a Lighter Blue. Google Blue for edges.
+  gradient_start_color = "#1B2336"    # Very Dark Slate/Blue-Charcoal
+  gradient_end_color = "#133874"      # Lighter, Brighter Blue (Material Blue 400)
+  highlight_border_color = '#133874'   # Match very dark start of gradient
+  highlight_font_color = '#FFFFFF'     # White font
+  highlight_edge_color = '#4285F4'    # Standard Google Blue for edges
+
+  light_gray = '#cccccc' # For non-highlighted font
 
   def get_node_name(tool_or_agent: Union[BaseAgent, BaseTool]):
     if isinstance(tool_or_agent, BaseAgent):
@@ -103,48 +108,82 @@ async def build_graph(graph, agent: BaseAgent, highlight_pairs):
           graph.node(
               name,
               caption,
-              style='filled,rounded',
-              fillcolor=dark_green,
-              color=dark_green,
+              style='filled,rounded', # All highlighted nodes are rounded
+              fillcolor=f'{gradient_start_color}:{gradient_end_color}',
+              color=highlight_border_color,
               shape=shape,
-              fontcolor=light_gray,
+              fontcolor=highlight_font_color,
           )
           return
-    # if not in highlight, draw non-highliht node
+    # if not in highlight, draw non-highlighted node
+    # It will inherit 'filled,rounded' style from default node_attr
     graph.node(
         name,
         caption,
-        shape=shape,
-        style='rounded',
-        color=light_gray,
-        fontcolor=light_gray,
+        shape=shape, 
+        # style will be inherited from node_attr
     )
 
   def draw_edge(from_name, to_name):
     if highlight_pairs:
       for highlight_from, highlight_to in highlight_pairs:
         if from_name == highlight_from and to_name == highlight_to:
-          graph.edge(from_name, to_name, color=light_green)
+          graph.edge(from_name, to_name, color=highlight_edge_color, penwidth="2.0")
           return
         elif from_name == highlight_to and to_name == highlight_from:
-          graph.edge(from_name, to_name, color=light_green, dir='back')
+          graph.edge(from_name, to_name, color=highlight_edge_color, penwidth="2.0", dir='back')
           return
     # if no need to highlight, color gray
-    graph.edge(from_name, to_name, arrowhead='none', color=light_gray)
+    # Color will be inherited from graph.edge_attr. Using 'normal' arrowhead.
+    graph.edge(from_name, to_name, arrowhead='normal')
 
+  #logger.info(f"Building graph for agent: {agent.name} (type: {type(agent)})")
   draw_node(agent)
   for sub_agent in agent.sub_agents:
-    build_graph(graph, sub_agent, highlight_pairs)
+    #logger.info(f"Processing sub-agent: {sub_agent.name} of {agent.name}")
+    await build_graph(graph, sub_agent, highlight_pairs) # Added await here as build_graph is async
+    #logger.info(f"Drawing edge from {agent.name} to sub-agent {sub_agent.name}")
     draw_edge(agent.name, sub_agent.name)
   if isinstance(agent, LlmAgent):
-    for tool in await agent.canonical_tools():
+    #logger.info(f"Processing tools for LlmAgent: {agent.name}")
+    tools = await agent.canonical_tools()
+    #if not tools:
+      #logger.info(f"No canonical tools found for LlmAgent: {agent.name}")
+    for tool in tools:
+      tool_name = get_node_name(tool)
+      #logger.info(f"Drawing node for tool: {tool_name} (for agent {agent.name})")
       draw_node(tool)
-      draw_edge(agent.name, get_node_name(tool))
+      #logger.info(f"Drawing edge from {agent.name} to tool {tool_name}")
+      draw_edge(agent.name, tool_name)
+  #else:
+    #logger.info(f"Agent {agent.name} is not an LlmAgent, skipping direct tool processing for it.")
 
 
 async def get_agent_graph(root_agent, highlights_pairs, image=False):
-  print('build graph')
-  graph = graphviz.Digraph(graph_attr={'rankdir': 'LR', 'bgcolor': '#333537'})
+  #logger.info(f"--- get_agent_graph called for root: {root_agent.name} ---")
+  #logger.info(f"Highlight pairs received: {highlights_pairs}")
+  graph = graphviz.Digraph(
+      graph_attr={
+          'rankdir': 'LR',
+          'bgcolor': '#333537',
+          'splines': 'spline',  # Changed from 'curved'
+          'concentrate': 'true',
+          'overlap': 'false', # Added to prevent node overlap
+      },
+      node_attr={
+          'fontname': 'Arial',
+          'fontsize': '12',
+          'style': 'filled,rounded', # Default to rounded corners
+          'shape': 'box', # Default shape
+          'fillcolor': '#424242', # Slightly darker gray for non-highlighted nodes
+          'fontcolor': '#E8EAED',
+          'color': '#5F6368', # Border color
+      },
+      edge_attr={
+          'color': '#757575', # Darker gray for non-highlighted edges
+          'arrowsize': '0.7',
+      },
+  )
   await build_graph(graph, root_agent, highlights_pairs)
   if image:
     return graph.pipe(format='png')
