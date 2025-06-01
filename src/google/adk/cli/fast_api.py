@@ -988,7 +988,20 @@ def get_fast_api_app(
 
   if web:
     BASE_DIR = Path(__file__).parent.resolve()
-    ANGULAR_DIST_PATH = BASE_DIR / "browser"
+    # Check for custom ADK_WEB_DIR environment variable
+    custom_web_dir = os.environ.get("ADK_WEB_DIR")
+    if custom_web_dir:
+      ANGULAR_DIST_PATH = Path(custom_web_dir).resolve()
+      logger.info(f"Using custom ADK web UI directory: {ANGULAR_DIST_PATH}")
+    else:
+      ANGULAR_DIST_PATH = BASE_DIR / "browser"
+      logger.info(f"Using default ADK web UI directory: {ANGULAR_DIST_PATH}")
+
+    # Ensure the ANGULAR_DIST_PATH exists if we are serving web
+    if not ANGULAR_DIST_PATH.exists() or not ANGULAR_DIST_PATH.is_dir():
+        logger.error(f"ADK Web UI directory not found or is not a directory: {ANGULAR_DIST_PATH}")
+        # Optionally, raise an error or prevent app startup if UI is critical
+        # For now, we'll let it proceed, but FastAPI might fail to serve static files.
 
     @app.get("/")
     async def redirect_to_dev_ui():
@@ -996,9 +1009,20 @@ def get_fast_api_app(
 
     @app.get("/dev-ui")
     async def dev_ui():
-      return FileResponse(BASE_DIR / "browser/index.html")
+      index_path = ANGULAR_DIST_PATH / "index.html"
+      logger.info(f"Attempting to serve /dev-ui from index_path: {index_path}") # ADDED LOGGING
+      if not index_path.exists():
+          logger.error(f"index.html not found in ADK Web UI directory: {index_path}")
+          raise HTTPException(status_code=404, detail="Web UI index.html not found")
+      logger.info(f"FileResponse will be called with path: {index_path}") # ADDED LOGGING
+      return FileResponse(index_path)
 
-    app.mount(
-        "/", StaticFiles(directory=ANGULAR_DIST_PATH, html=True), name="static"
-    )
+    # Check if ANGULAR_DIST_PATH is valid before mounting
+    if ANGULAR_DIST_PATH.exists() and ANGULAR_DIST_PATH.is_dir():
+        app.mount(
+            "/", StaticFiles(directory=ANGULAR_DIST_PATH, html=True), name="static"
+        )
+    else:
+        logger.error(f"Cannot mount static files: ADK Web UI directory {ANGULAR_DIST_PATH} is invalid.")
+
   return app
